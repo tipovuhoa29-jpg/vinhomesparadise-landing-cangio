@@ -504,24 +504,73 @@ const MasterPlan = () => {
 const Contact = () => {
   const [formState, setFormState] = useState({ name: '', phone: '', email: '', interest: 'Biệt thự' });
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [paymentCode, setPaymentCode] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState<'UNPAID' | 'PAID' | 'MANUAL'>('UNPAID');
+  const [showManualButton, setShowManualButton] = useState(false);
+  const [timer, setTimer] = useState(60);
+
+  const ZALO_GROUP_URL = "https://zalo.me/g/jytfbx282";
+  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbycLMg7HUf04_xkaWOUXzFO66ddmPqPZ2FnJhKP17sgAm-MKG6zgFh9M03Tz2g6C7RS/exec";
+
+  useEffect(() => {
+    let pollInterval: number;
+    let timerInterval: number;
+
+    if (isSubmitted && paymentStatus === 'UNPAID') {
+      // Bắt đầu đếm ngược 1 phút
+      timerInterval = window.setInterval(() => {
+        setTimer((prev) => {
+          if (prev <= 1) {
+            setShowManualButton(true);
+            clearInterval(timerInterval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      // Kiểm tra trạng thái thanh toán mỗi 5 giây
+      pollInterval = window.setInterval(async () => {
+        try {
+          const response = await fetch(`${SCRIPT_URL}?paymentCode=${paymentCode}`);
+          const status = await response.text();
+          if (status.trim() === 'PAID') {
+            setPaymentStatus('PAID');
+            clearInterval(pollInterval);
+            clearInterval(timerInterval);
+          }
+        } catch (error) {
+          console.error('Error polling status:', error);
+        }
+      }, 5000);
+    }
+
+    return () => {
+      clearInterval(pollInterval);
+      clearInterval(timerInterval);
+    };
+  }, [isSubmitted, paymentStatus, paymentCode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // URL bạn vừa cung cấp
-    const scriptUrl = "https://script.google.com/macros/s/AKfycbzMwPV1Y31CEX6FgyZBTtsrPqubR_Q-AEeYRKBK9RVuAq2MpYWpYMW4T40yr8lsl35x/exec";
-    
+    const randomNum = Math.floor(100000 + Math.random() * 900000);
+    const code = `BDS${randomNum}`;
+    setPaymentCode(code);
+    setTimer(60);
+    setShowManualButton(false);
+    setPaymentStatus('UNPAID');
+
     try {
-      // Sử dụng URLSearchParams để gửi dữ liệu dưới dạng application/x-www-form-urlencoded
-      // Điều này giúp Apps Script nhận dữ liệu qua e.parameter dễ dàng hơn
       const params = new URLSearchParams();
       params.append('name', formState.name);
       params.append('phone', formState.phone);
       params.append('email', formState.email);
       params.append('interest', formState.interest);
+      params.append('paymentCode', code);
       params.append('timestamp', new Date().toLocaleString('vi-VN'));
 
-      await fetch(scriptUrl, {
+      await fetch(SCRIPT_URL, {
         method: 'POST',
         mode: 'no-cors', 
         headers: {
@@ -534,7 +583,10 @@ const Contact = () => {
     }
 
     setIsSubmitted(true);
-    setTimeout(() => setIsSubmitted(false), 5000);
+  };
+
+  const handleManualConfirm = () => {
+    setPaymentStatus('MANUAL');
   };
 
   return (
@@ -587,15 +639,119 @@ const Contact = () => {
             className="bg-white p-10 rounded-3xl shadow-2xl border border-gold-200"
           >
             {isSubmitted ? (
-              <div className="text-center py-12">
-                <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <CheckCircle2 size={40} />
-                </div>
-                <h3 className="text-2xl font-serif font-bold text-gold-950 mb-2">Gửi thành công!</h3>
-                <p className="text-gold-900/60">Chúng tôi sẽ liên hệ với bạn trong thời gian sớm nhất.</p>
+              <div className="text-center">
+                {paymentStatus === 'PAID' ? (
+                  <motion.div 
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="py-8"
+                  >
+                    <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <Award size={40} />
+                    </div>
+                    <h3 className="text-3xl font-serif font-bold text-gold-950 mb-4 text-balance">Chúc mừng! Thanh toán thành công</h3>
+                    <p className="text-gold-900/70 mb-8 leading-relaxed">
+                      Hệ thống đã xác nhận thanh toán của bạn. Chào mừng bạn đến với cộng đồng Vinhomes Green Paradise.
+                    </p>
+                    <a 
+                      href={ZALO_GROUP_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-8 py-4 bg-[#0068FF] text-white rounded-full font-bold text-lg hover:bg-[#0052cc] transition-all shadow-lg"
+                    >
+                      Vào nhóm Zalo riêng tư <ArrowRight size={20} />
+                    </a>
+                  </motion.div>
+                ) : paymentStatus === 'MANUAL' ? (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="py-8"
+                  >
+                    <div className="w-20 h-20 bg-gold-100 text-gold-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <ShieldCheck size={40} />
+                    </div>
+                    <h3 className="text-2xl font-serif font-bold text-gold-950 mb-4">Đã nhận yêu cầu xác nhận</h3>
+                    <p className="text-gold-900/70 mb-8 leading-relaxed">
+                      Chúng tôi sẽ kiểm tra giao dịch của bạn thủ công và duyệt bạn vào nhóm sớm nhất có thể. 
+                      Bạn có thể tham gia nhóm chờ tại đây:
+                    </p>
+                    <a 
+                      href={ZALO_GROUP_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-8 py-4 bg-[#0068FF] text-white rounded-full font-bold text-lg hover:bg-[#0052cc] transition-all shadow-lg"
+                    >
+                      Tham gia nhóm Zalo <ArrowRight size={20} />
+                    </a>
+                  </motion.div>
+                ) : (
+                  <>
+                    <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <CheckCircle2 size={32} />
+                    </div>
+                    <h3 className="text-2xl font-serif font-bold text-gold-950 mb-2">Đăng ký thành công!</h3>
+                    <p className="text-gold-900/60 mb-6 text-sm">Vui lòng thanh toán phí dịch vụ để hoàn tất hồ sơ.</p>
+                    
+                    <div className="bg-gold-50 p-6 rounded-2xl border border-gold-200 mb-6">
+                      <div className="text-sm font-bold text-gold-950 uppercase tracking-widest mb-4">Quét mã QR để thanh toán</div>
+                      <div className="bg-white p-4 rounded-xl shadow-inner mb-4 inline-block relative">
+                        <img 
+                          src={`https://qr.sepay.vn/img?acc=962476666688888&bank=BIDV&amount=19000&des=${paymentCode}&template=compact`} 
+                          alt="QR Thanh toán" 
+                          className="w-48 h-48 mx-auto"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-[1px] opacity-0 hover:opacity-100 transition-opacity">
+                           <Zap className="text-gold-600 animate-pulse" size={32} />
+                        </div>
+                      </div>
+                      <div className="space-y-2 text-left">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gold-900/50">Số tiền:</span>
+                          <span className="font-bold text-gold-950">19.000đ</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gold-900/50">Nội dung:</span>
+                          <span className="font-bold text-gold-600">{paymentCode}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mb-6">
+                      {showManualButton ? (
+                        <motion.button 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          onClick={handleManualConfirm}
+                          className="w-full py-3 bg-white border-2 border-gold-500 text-gold-600 rounded-xl font-bold hover:bg-gold-50 transition-all flex items-center justify-center gap-2"
+                        >
+                          Xác nhận đã thanh toán <ShieldCheck size={18} />
+                        </motion.button>
+                      ) : (
+                        <div className="text-xs text-gold-900/40 italic flex items-center justify-center gap-2">
+                          <div className="w-2 h-2 bg-gold-400 rounded-full animate-pulse" />
+                          Đang chờ xác nhận tự động ({timer}s)...
+                        </div>
+                      )}
+                    </div>
+                    
+                    <button 
+                      onClick={() => setIsSubmitted(false)}
+                      className="text-gold-600 font-bold text-sm hover:underline"
+                    >
+                      Quay lại trang đăng ký
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="bg-gold-50 p-4 rounded-xl border border-gold-200 mb-6">
+                  <p className="text-xs text-gold-900/70 leading-relaxed">
+                    <span className="font-bold text-gold-600">Lưu ý:</span> Sau khi đăng ký, bạn sẽ được mời vào <span className="font-bold">nhóm Zalo riêng tư</span> để nhận tư vấn chuyên sâu. Đồng thời, một email và tin nhắn Zalo xác thực sẽ được gửi đến bạn.
+                  </p>
+                </div>
                 <div>
                   <label className="block text-sm font-bold text-gold-950 uppercase tracking-widest mb-2">Họ và tên</label>
                   <input 
